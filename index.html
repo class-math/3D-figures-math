@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>立体図形学習ツール（修正完了版）</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f2f5; font-family: sans-serif; touch-action: none; }
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 100; width: 200px; }
+        .mode-btn { width: 100%; padding: 10px; margin: 4px 0; border: 2px solid #ccc; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        #btn-v { background: #fff0f0; color: #cc0000; }
+        #btn-e { background: #f0f8ff; color: #0066cc; }
+        #btn-f { background: #f0fff0; color: #008800; }
+        .active { border-color: #333 !important; transform: scale(1.05); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        select { width: 100%; padding: 8px; margin-bottom: 8px; font-size: 16px; border-radius: 5px; }
+        .reset-btn { width: 100%; padding: 10px; background: #444; color: white; border: none; border-radius: 5px; margin-top: 10px; cursor: pointer; font-weight: bold; }
+        .number-label { position: absolute; font-size: 24px; font-weight: bold; pointer-events: none; text-shadow: 2px 2px 0 white, -2px -2px 0 white, 2px -2px 0 white, -2px 2px 0 white; transform: translate(-50%, -50%); }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <select id="shapeSelect">
+        <option value="triPyramid">三角錐</option>
+        <option value="quadPyramid">四角錐</option>
+        <option value="rectPrism">直方体</option>
+        <option value="cube">立方体</option>
+        <option value="triPrism">三角柱</option>
+        <option value="quadPrism">四角柱</option>
+    </select>
+    <button id="btn-v" class="mode-btn active" onclick="setMode('v')">● 頂点</button>
+    <button id="btn-e" class="mode-btn" onclick="setMode('e')">― 辺</button>
+    <button id="btn-f" class="mode-btn" onclick="setMode('f')">■ 面</button>
+    <button class="reset-btn" onclick="resetCount()">全部リセット</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+
+<script>
+    var scene, camera, renderer, labelRenderer, controls, raycaster;
+    var currentGroup, interactiveObjects = { v: [], e: [], f: [] };
+    var mode = 'v';
+    var counters = { v: 0, e: 0, f: 0 };
+
+    window.onload = function() { init(); animate(); };
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf8f9fa);
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(5, 5, 8);
+        
+        // 背景透明化の設定（alpha: true）
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        labelRenderer = new THREE.CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
+        
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        
+        raycaster = new THREE.Raycaster();
+        raycaster.params.Line.threshold = 0.2;
+        
+        var light = new THREE.DirectionalLight(0xffffff, 1.0);
+        light.position.set(5, 10, 7);
+        scene.add(light, new THREE.AmbientLight(0xffffff, 0.8));
+
+        document.getElementById('shapeSelect').onchange = function(e) { updateShape(e.target.value); };
+        window.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('resize', onWindowResize);
+        
+        updateShape('triPyramid');
+    }
+
+    function setMode(m) {
+        mode = m;
+        var btns = document.getElementsByClassName('mode-btn');
+        for(var i=0; i<btns.length; i++) btns[i].classList.remove('active');
+        document.getElementById('btn-' + m).classList.add('active');
+    }
+
+    function updateShape(type) {
+        // --- 【修正点】画面上の数字ラベルを強制的に全削除 ---
+        var oldLabels = document.getElementsByClassName('number-label');
+        while(oldLabels.length > 0){
+            oldLabels[0].parentNode.removeChild(oldLabels[0]);
+        }
+
+        if (currentGroup) {
+            scene.remove(currentGroup);
+            currentGroup.traverse(function(obj) {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+            });
+        }
+        currentGroup = new THREE.Group();
+        interactiveObjects = { v: [], e: [], f: [] };
+        counters = { v: 0, e: 0, f: 0 };
+
+        var geom;
+        var h = 3;
+        if (type === 'triPyramid') geom = new THREE.TetrahedronGeometry(2);
+        else if (type === 'quadPyramid') geom = new THREE.ConeGeometry(2, h, 4);
+        else if (type === 'rectPrism') geom = new THREE.BoxGeometry(4, 2, 2.5);
+        else if (type === 'cube') geom = new THREE.BoxGeometry(2.5, 2.5, 2.5);
+        else if (type === 'triPrism') geom = new THREE.CylinderGeometry(1.5, 1.5, h, 3);
+        else if (type === 'quadPrism') geom = new THREE.CylinderGeometry(1.5, 1.5, h, 4);
+
+        geom = geom.toNonIndexed(); 
+
+        // --- 透明な判定用メッシュ ---
+        var hitMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xffffff, 
+            transparent: true, 
+            opacity: 0.0, 
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        var hitMesh = new THREE.Mesh(geom, hitMaterial);
+        hitMesh.userData = { clickedFacesNormals: [] };
+        currentGroup.add(hitMesh);
+        interactiveObjects.f = [hitMesh];
+
+        // --- 黒い細線 ---
+        var wireMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1.5 });
+        var wireframe = new THREE.LineSegments(new THREE.EdgesGeometry(geom), wireMat);
+        currentGroup.add(wireframe);
+
+        // --- 頂点 ---
+        var pos = geom.attributes.position;
+        var vSet = [];
+        for(var i=0; i<pos.count; i++) {
+            var v = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
+            var isCenterAxis = Math.abs(v.x) < 0.05 && Math.abs(v.z) < 0.05;
+            var isPyramidTip = type.indexOf('Pyramid') !== -1 && v.y > 0;
+            if (isCenterAxis && !isPyramidTip) continue; 
+            var exists = false;
+            for(var j=0; j<vSet.length; j++) { if(vSet[j].distanceTo(v) < 0.1) exists = true; }
+            if(!exists) {
+                vSet.push(v);
+                var dot = new THREE.Mesh(new THREE.SphereGeometry(0.12), new THREE.MeshBasicMaterial({color: 0xbbbbbb}));
+                dot.position.copy(v); dot.userData = { type: 'v', clicked: false };
+                currentGroup.add(dot); interactiveObjects.v.push(dot);
+            }
+        }
+        // --- 辺 ---
+        var edgePoints = new THREE.EdgesGeometry(geom).attributes.position;
+        for(var i=0; i<edgePoints.count; i+=2) {
+            var start = new THREE.Vector3(edgePoints.getX(i), edgePoints.getY(i), edgePoints.getZ(i));
+            var end = new THREE.Vector3(edgePoints.getX(i+1), edgePoints.getY(i+1), edgePoints.getZ(i+1));
+            var mid = start.clone().lerp(end, 0.5);
+            var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, start.distanceTo(end)), new THREE.MeshBasicMaterial({ color: 0x0066cc, transparent: true, opacity: 0.0 }));
+            bar.position.copy(mid); bar.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), end.clone().sub(start).normalize());
+            bar.userData = { type: 'e', clicked: false };
+            currentGroup.add(bar); interactiveObjects.e.push(bar);
+        }
+        scene.add(currentGroup);
+    }
+
+    function onPointerDown(e) {
+        if (e.target.tagName !== 'CANVAS') return;
+        var mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
+        raycaster.setFromCamera(mouse, camera);
+        var targets = (mode === 'v') ? interactiveObjects.v : (mode === 'e' ? interactiveObjects.e : interactiveObjects.f);
+        var intersects = raycaster.intersectObjects(targets);
+
+        if (intersects.length > 0) {
+            var hit = intersects[0];
+            if ((mode === 'v' || mode === 'e') && hit.object.userData.clicked) return;
+
+            if (mode === 'f') {
+                var mesh = hit.object;
+                var clickedNormal = hit.face.normal.clone().normalize();
+                
+                var alreadyClicked = mesh.userData.clickedFacesNormals.some(function(n) { return n.distanceTo(clickedNormal) < 0.01; });
+                if (alreadyClicked) return;
+                mesh.userData.clickedFacesNormals.push(clickedNormal);
+
+                counters[mode]++;
+
+                // クリックされた面と同じ向きの面を探して色をつける
+                var highlightGeom = new THREE.BufferGeometry();
+                var vertices = [];
+                var posAttr = mesh.geometry.attributes.position;
+                
+                for (var i = 0; i < posAttr.count; i += 3) {
+                    var vA = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+                    var vB = new THREE.Vector3().fromBufferAttribute(posAttr, i+1);
+                    var vC = new THREE.Vector3().fromBufferAttribute(posAttr, i+2);
+                    var cb = new THREE.Vector3().subVectors(vC, vB);
+                    var ab = new THREE.Vector3().subVectors(vA, vB);
+                    var normal = cb.cross(ab).normalize();
+
+                    if (normal.distanceTo(clickedNormal) < 0.1) {
+                        vertices.push(vA.x, vA.y, vA.z);
+                        vertices.push(vB.x, vB.y, vB.z);
+                        vertices.push(vC.x, vC.y, vC.z);
+                    }
+                }
+                highlightGeom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                
+                var highlightMesh = new THREE.Mesh(
+                    highlightGeom, 
+                    new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+                );
+                currentGroup.add(highlightMesh);
+
+            } else {
+                hit.object.userData.clicked = true;
+                counters[mode]++;
+                if (mode === 'v') hit.object.material.color.set(0xff4444);
+                if (mode === 'e') { hit.object.material.opacity = 1.0; hit.object.material.color.set(0x4444ff); }
+            }
+
+            var div = document.createElement('div');
+            div.className = 'number-label';
+            div.textContent = counters[mode];
+            div.style.color = (mode === 'v') ? '#cc0000' : (mode === 'e' ? '#0066cc' : '#008800');
+            var label = new THREE.CSS2DObject(div);
+            var offset = (mode === 'f') ? hit.face.normal.clone().multiplyScalar(0.3) : hit.point.clone().normalize().multiplyScalar(0.2);
+            label.position.copy(hit.point).add(offset);
+            currentGroup.add(label);
+        }
+    }
+    
+    function resetCount() { 
+        // 図形を再描画することでリセット
+        updateShape(document.getElementById('shapeSelect').value); 
+    }
+    
+    function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); labelRenderer.setSize(window.innerWidth, window.innerHeight); }
+    function animate() { requestAnimationFrame(animate); if(controls) controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); }
+</script>
+</body>
+</html>
