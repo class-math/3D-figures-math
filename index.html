@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>立体図形学習ツール（展開図機能付き）</title>
+    <title>立体図形学習ツール（展開図・関係性機能付き）</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #f0f2f5; font-family: sans-serif; touch-action: none; }
-        #ui { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 100; width: 220px; }
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 100; width: 230px; }
         
         select { width: 100%; padding: 8px; margin-bottom: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; }
         
@@ -14,6 +14,7 @@
         #btn-v { background: #fff0f0; color: #cc0000; }
         #btn-e { background: #f0f8ff; color: #0066cc; }
         #btn-f { background: #f0fff0; color: #008800; }
+        #btn-r { background: #fff5e6; color: #cc6600; margin-top: 10px; } /* 新機能ボタン */
         
         .active { border-color: #333 !important; transform: scale(1.03); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .disabled { opacity: 0.3; pointer-events: none; filter: grayscale(100%); background: #ddd !important; border-color: #ccc !important; }
@@ -25,6 +26,11 @@
         /* 展開図ボタン */
         .net-btn { width: 100%; padding: 12px; margin-top: 5px; background: #ff9800; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         .net-btn:hover { background: #e68900; }
+
+        /* 関係性情報パネル */
+        #relationInfo { display: none; margin-top: 10px; padding: 10px; background: #fff; border: 2px solid #cc6600; border-radius: 5px; font-size: 14px; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 6px; }
+        .legend-color { width: 16px; height: 16px; margin-right: 8px; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 
         .number-label { position: absolute; font-size: 24px; font-weight: bold; pointer-events: none; text-shadow: 2px 2px 0 white, -2px -2px 0 white, 2px -2px 0 white, -2px 2px 0 white; transform: translate(-50%, -50%); }
 
@@ -40,12 +46,12 @@
 <div id="ui">
     <select id="shapeSelect">
         <optgroup label="角錐・角柱">
-            <option value="triPyramid">三角錐</option>
-            <option value="quadPyramid">四角錐</option>
-            <option value="rectPrism">直方体</option>
             <option value="cube">立方体</option>
+            <option value="rectPrism">直方体</option>
             <option value="triPrism">三角柱</option>
             <option value="quadPrism">四角柱</option>
+            <option value="triPyramid">三角錐</option>
+            <option value="quadPyramid">四角錐</option>
         </optgroup>
         <optgroup label="円錐・円柱">
             <option value="cone">円錐</option>
@@ -56,6 +62,18 @@
     <button id="btn-v" class="mode-btn active" onclick="setMode('v')">● 頂点</button>
     <button id="btn-e" class="mode-btn" onclick="setMode('e')">― 辺</button>
     <button id="btn-f" class="mode-btn" onclick="setMode('f')">■ 面</button>
+    
+    <button id="btn-r" class="mode-btn" onclick="setMode('r')">🔍 垂直・平行 (辺)</button>
+
+    <div id="relationInfo">
+        <div style="font-weight:bold; margin-bottom:8px; border-bottom:1px solid #ccc; padding-bottom:4px;">
+            基準の辺をクリック！
+        </div>
+        <div class="legend-item"><div class="legend-color" style="background:#000;"></div>基準の辺</div>
+        <div class="legend-item"><div class="legend-color" style="background:#3399ff;"></div>平行 (<span id="count-p">0</span>)</div>
+        <div class="legend-item"><div class="legend-color" style="background:#ff3333;"></div>垂直 (<span id="count-v">0</span>)</div>
+        <div class="legend-item"><div class="legend-color" style="background:#ffaa00;"></div>ねじれの位置 (<span id="count-s">0</span>)</div>
+    </div>
 
     <div class="control-group">
         <button id="styleBtn" class="toggle-btn" onclick="toggleStyle()">表示: 実体 (白)</button>
@@ -132,7 +150,8 @@
         window.addEventListener('pointerdown', onPointerDown);
         window.addEventListener('resize', onWindowResize);
         
-        updateShape('triPyramid');
+        // 初期表示を立方体に変更
+        updateShape('cube');
     }
 
     function setMode(m) {
@@ -140,6 +159,15 @@
         var btns = document.getElementsByClassName('mode-btn');
         for(var i=0; i<btns.length; i++) btns[i].classList.remove('active');
         document.getElementById('btn-' + m).classList.add('active');
+
+        var relInfo = document.getElementById('relationInfo');
+        if (m === 'r') {
+            relInfo.style.display = 'block';
+            updateShape(document.getElementById('shapeSelect').value); // 強制リセット
+        } else {
+            relInfo.style.display = 'none';
+            updateShape(document.getElementById('shapeSelect').value); // 強制リセット
+        }
     }
 
     function toggleStyle() {
@@ -159,17 +187,22 @@
         var btnV = document.getElementById('btn-v');
         var btnE = document.getElementById('btn-e');
         var btnF = document.getElementById('btn-f');
+        var btnR = document.getElementById('btn-r');
+        
         btnV.classList.remove('disabled');
         btnE.classList.remove('disabled');
         btnF.classList.remove('disabled');
+        btnR.classList.remove('disabled');
 
         if (type === 'cylinder') {
             btnV.classList.add('disabled');
             btnE.classList.add('disabled');
-            if(mode === 'v' || mode === 'e') setMode('f');
+            btnR.classList.add('disabled');
+            if(mode === 'v' || mode === 'e' || mode === 'r') setMode('f');
         } else if (type === 'cone') {
             btnE.classList.add('disabled');
-            if(mode === 'e') setMode('v');
+            btnR.classList.add('disabled');
+            if(mode === 'e' || mode === 'r') setMode('v');
         }
 
         var oldLabels = document.getElementsByClassName('number-label');
@@ -203,9 +236,11 @@
         if(!isSmooth) geom = geom.toNonIndexed(); 
 
         var baseMaterial;
-        if (isTransparent) {
+        if (isTransparent || mode === 'r') {
+            // 関係性モードの時は強制的に本体を透明にして見やすくする
+            var op = (mode === 'r') ? 0.05 : 0.0;
             baseMaterial = new THREE.MeshBasicMaterial({ 
-                color: 0xffffff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false 
+                color: 0xffffff, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false 
             });
         } else {
             baseMaterial = new THREE.MeshPhongMaterial({ 
@@ -236,21 +271,28 @@
         } else {
             var wireframe = new THREE.LineSegments(new THREE.EdgesGeometry(geom), wireMat);
             currentGroup.add(wireframe);
+            currentGroup.userData.wireframe = wireframe;
             
             var edgePoints = new THREE.EdgesGeometry(geom).attributes.position;
             for(var i=0; i<edgePoints.count; i+=2) {
                 var start = new THREE.Vector3(edgePoints.getX(i), edgePoints.getY(i), edgePoints.getZ(i));
                 var end = new THREE.Vector3(edgePoints.getX(i+1), edgePoints.getY(i+1), edgePoints.getZ(i+1));
                 var mid = start.clone().lerp(end, 0.5);
-                var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, start.distanceTo(end)), new THREE.MeshBasicMaterial({ color: 0x0066cc, transparent: true, opacity: 0.0 }));
-                bar.position.copy(mid); bar.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), end.clone().sub(start).normalize());
-                bar.userData = { type: 'e', clicked: false };
-                currentGroup.add(bar); interactiveObjects.e.push(bar);
+                
+                // 少し太めにしてクリックしやすくする
+                var barMat = new THREE.MeshBasicMaterial({ color: 0x0066cc, transparent: true, opacity: 0.0 });
+                var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, start.distanceTo(end)), barMat);
+                bar.position.copy(mid); 
+                bar.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), end.clone().sub(start).normalize());
+                
+                // 計算用にstartとendを保存しておく
+                bar.userData = { type: 'e', clicked: false, start: start.clone(), end: end.clone() };
+                currentGroup.add(bar); 
+                interactiveObjects.e.push(bar);
             }
         }
 
-        if (type === 'cylinder') {
-        } else {
+        if (type !== 'cylinder') {
             var vPoints = [];
             if (type === 'cone') {
                 vPoints.push(new THREE.Vector3(0, h/2, 0));
@@ -271,14 +313,109 @@
                 for(var j=0; j<vSet.length; j++) { if(vSet[j].distanceTo(v) < 0.1) exists = true; }
                 if(!exists) {
                     vSet.push(v);
-                    var dotColor = isTransparent ? 0xbbbbbb : 0xcccccc;
-                    var dot = new THREE.Mesh(new THREE.SphereGeometry(0.12), new THREE.MeshBasicMaterial({color: dotColor}));
+                    var dotColor = isTransparent || mode === 'r' ? 0xbbbbbb : 0xcccccc;
+                    var dot = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({color: dotColor}));
                     dot.position.copy(v); dot.userData = { type: 'v', clicked: false };
                     currentGroup.add(dot); interactiveObjects.v.push(dot);
                 }
             }
         }
+
+        // --- 関係性学習モード用の初期化 ---
+        if (mode === 'r' && currentGroup.userData.wireframe) {
+            currentGroup.userData.wireframe.visible = false; // 黒い枠線を消す
+            interactiveObjects.e.forEach(function(e) {
+                e.material.opacity = 0.4;
+                e.material.color.set(0xaaaaaa);
+            });
+            document.getElementById('count-p').textContent = 0;
+            document.getElementById('count-v').textContent = 0;
+            document.getElementById('count-s').textContent = 0;
+        }
+
         scene.add(currentGroup);
+    }
+
+    // 関係性を判定して色を塗る関数
+    function analyzeRelations(refEdge) {
+        var counts = { p: 0, v: 0, s: 0 };
+        var eps = 0.05; // 誤差許容範囲
+
+        // 基準となる辺のベクトルと頂点
+        var rP1 = refEdge.userData.start;
+        var rP2 = refEdge.userData.end;
+        var rV = new THREE.Vector3().subVectors(rP2, rP1).normalize();
+
+        // いったんすべての辺をリセット
+        interactiveObjects.e.forEach(function(edge) {
+            edge.material.opacity = 0.2;
+            edge.material.color.set(0xcccccc);
+            edge.scale.set(1, 1, 1);
+        });
+
+        interactiveObjects.e.forEach(function(edge) {
+            if (edge === refEdge) {
+                // 基準の辺
+                edge.material.opacity = 1.0;
+                edge.material.color.set(0x000000);
+                edge.scale.set(1.5, 1, 1.5);
+                return;
+            }
+
+            var tP1 = edge.userData.start;
+            var tP2 = edge.userData.end;
+            var tV = new THREE.Vector3().subVectors(tP2, tP1).normalize();
+
+            // 頂点を共有しているか（交わっているか）
+            var sharesVertex = false;
+            if (rP1.distanceTo(tP1) < eps || rP1.distanceTo(tP2) < eps ||
+                rP2.distanceTo(tP1) < eps || rP2.distanceTo(tP2) < eps) {
+                sharesVertex = true;
+            }
+
+            var dot = Math.abs(rV.dot(tV));
+            var isParallel = dot > 1 - eps;
+            var isPerp = dot < eps;
+
+            // 同一平面上にあるかの判定 (外積とベクトルの内積)
+            var cross = new THREE.Vector3().crossVectors(rV, tV);
+            var pDiff = new THREE.Vector3().subVectors(tP1, rP1);
+            var isCoplanar = Math.abs(cross.dot(pDiff)) < eps || isParallel;
+
+            if (sharesVertex) {
+                if (isPerp) {
+                    edge.material.color.set(0xff3333); // 垂直（赤）
+                    edge.material.opacity = 1.0;
+                    edge.scale.set(1.2, 1, 1.2);
+                    counts.v++;
+                } else {
+                    // 交わるが垂直ではない（グレー）
+                    edge.material.color.set(0x999999);
+                    edge.material.opacity = 0.6;
+                }
+            } else {
+                if (isParallel) {
+                    edge.material.color.set(0x3399ff); // 平行（青）
+                    edge.material.opacity = 1.0;
+                    edge.scale.set(1.2, 1, 1.2);
+                    counts.p++;
+                } else if (!isCoplanar) {
+                    edge.material.color.set(0xffaa00); // ねじれの位置（オレンジ）
+                    edge.material.opacity = 1.0;
+                    edge.scale.set(1.2, 1, 1.2);
+                    counts.s++;
+                } else {
+                    // 同一平面上にあるが平行でない（延長すれば交わる）
+                    edge.material.color.set(0x999999);
+                    edge.material.opacity = 0.6;
+                }
+            }
+        });
+
+        // 画面の数字を更新
+        document.getElementById('count-p').textContent = counts.p;
+        document.getElementById('count-v').textContent = counts.v;
+        document.getElementById('count-s').textContent = counts.s;
     }
 
     function onPointerDown(e) {
@@ -289,6 +426,17 @@
         var btnId = 'btn-' + mode;
         if(document.getElementById(btnId).classList.contains('disabled')) return;
 
+        // --- 関係性モード用の処理 ---
+        if (mode === 'r') {
+            var targetsR = interactiveObjects.e;
+            var intersectsR = raycaster.intersectObjects(targetsR);
+            if (intersectsR.length > 0) {
+                analyzeRelations(intersectsR[0].object);
+            }
+            return;
+        }
+
+        // --- 通常の頂点・辺・面モード用の処理 ---
         var targets = (mode === 'v') ? interactiveObjects.v : (mode === 'e' ? interactiveObjects.e : interactiveObjects.f);
         var intersects = raycaster.intersectObjects(targets);
 
@@ -403,63 +551,48 @@
     }
 
     function generateNetSVG(type) {
-        // SVG生成ロジック (ViewBox: 0 0 300 300)
         var s = '<svg viewBox="0 0 300 300" width="100%" height="100%" style="overflow:visible;">';
         var style = 'fill="none" stroke="#333" stroke-width="2" fill="rgba(0,136,204,0.1)"';
         
         if(type === 'cube') {
-            // 立方体: 十字型
             s += `<path d="M100,50 h50 v50 h50 v50 h-50 v50 h-50 v-50 h-50 v-50 h50 z" ${style} />`;
             s += '<path d="M100,100 h50 M100,150 h50 M100,100 v50 M150,100 v50" stroke="#999" stroke-width="1" stroke-dasharray="4" />';
         } else if(type === 'rectPrism') {
-            // 直方体
             s += `<path d="M100,30 h50 v50 h50 v80 h-50 v50 h-50 v-50 h-40 v-80 h40 z" ${style} />`;
             s += '<line x1="100" y1="80" x2="150" y2="80" stroke="#999" stroke-dasharray="4"/>';
             s += '<line x1="100" y1="160" x2="150" y2="160" stroke="#999" stroke-dasharray="4"/>';
             s += '<line x1="100" y1="80" x2="100" y2="160" stroke="#999" stroke-dasharray="4"/>';
             s += '<line x1="150" y1="80" x2="150" y2="160" stroke="#999" stroke-dasharray="4"/>';
         } else if(type === 'triPrism') {
-            // 三角柱
             s += `<rect x="70" y="80" width="50" height="100" ${style} />`;
             s += `<rect x="120" y="80" width="50" height="100" ${style} />`;
             s += `<rect x="170" y="80" width="50" height="100" ${style} />`;
-            // 上下の三角形
             s += `<polygon points="120,80 170,80 145,36" ${style} />`;
             s += `<polygon points="120,180 170,180 145,224" ${style} />`;
         } else if(type === 'quadPrism') {
-             // 四角柱（立方体と同じ扱いだが少し長方形に）
-            s += `<rect x="80" y="50" width="60" height="200" ${style} />`; // 側面4つ分
+            s += `<rect x="80" y="50" width="60" height="200" ${style} />`;
             s += '<line x1="80" y1="100" x2="140" y2="100" stroke="#333" stroke-width="2"/>';
             s += '<line x1="80" y1="150" x2="140" y2="150" stroke="#333" stroke-width="2"/>';
             s += '<line x1="80" y1="200" x2="140" y2="200" stroke="#333" stroke-width="2"/>';
-            // 底面
             s += `<rect x="20" y="100" width="60" height="50" ${style} />`;
             s += `<rect x="140" y="100" width="60" height="50" ${style} />`;
         } else if(type === 'triPyramid') {
-            // 三角錐（正四面体）
-            s += `<polygon points="150,50 50,220 250,220" ${style} />`; // 大きな三角形
-            s += `<polygon points="150,220 100,135 200,135" stroke="#999" stroke-dasharray="4" fill="none"/>`; // 内部の線
+            s += `<polygon points="150,50 50,220 250,220" ${style} />`;
+            s += `<polygon points="150,220 100,135 200,135" stroke="#999" stroke-dasharray="4" fill="none"/>`;
         } else if(type === 'quadPyramid') {
-            // 四角錐
-            s += `<rect x="110" y="110" width="80" height="80" ${style} />`; // 底面
-            s += `<polygon points="110,110 190,110 150,30" ${style} />`; // 上
-            s += `<polygon points="190,110 190,190 270,150" ${style} />`; // 右
-            s += `<polygon points="190,190 110,190 150,270" ${style} />`; // 下
-            s += `<polygon points="110,190 110,110 30,150" ${style} />`; // 左
+            s += `<rect x="110" y="110" width="80" height="80" ${style} />`;
+            s += `<polygon points="110,110 190,110 150,30" ${style} />`;
+            s += `<polygon points="190,110 190,190 270,150" ${style} />`;
+            s += `<polygon points="190,190 110,190 150,270" ${style} />`;
+            s += `<polygon points="110,190 110,110 30,150" ${style} />`;
         } else if(type === 'cylinder') {
-            // 円柱
-            s += `<rect x="50" y="80" width="200" height="100" ${style} />`; // 側面
-            s += `<circle cx="150" cy="45" r="30" ${style} />`; // 上底面
-            s += `<circle cx="150" cy="215" r="30" ${style} />`; // 下底面
+            s += `<rect x="50" y="80" width="200" height="100" ${style} />`;
+            s += `<circle cx="150" cy="45" r="30" ${style} />`;
+            s += `<circle cx="150" cy="215" r="30" ${style} />`;
         } else if(type === 'cone') {
-            // 円錐
-            // 扇形 (Pathコマンドで描画: Move, Line, Arc, Close)
-            // 中心(150, 150), 半径100, 角度約120度と仮定
             s += `<path d="M150,150 L250,150 A100,100 0 0,0 63,100 Z" ${style} />`; 
-            // 底面 (扇形の弧に接するように)
             s += `<circle cx="150" cy="235" r="35" ${style} />`;
         }
-
         s += '</svg>';
         return s;
     }
