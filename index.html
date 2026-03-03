@@ -3,18 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>立体図形学習ツール（展開図・関係性機能付き）</title>
+    <title>立体図形学習ツール（展開図＆クイズ機能統合版）</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #f0f2f5; font-family: sans-serif; touch-action: none; }
         #ui { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 100; width: 230px; }
         
+        /* 学習・クイズ切り替えタブ */
+        .main-mode-toggle { display: flex; margin-bottom: 10px; gap: 5px; }
+        .main-btn { flex: 1; padding: 8px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; background: #ddd; color: #333; }
+        .main-btn.active { background: #333; color: white; }
+
         select { width: 100%; padding: 8px; margin-bottom: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; }
         
         .mode-btn { width: 100%; padding: 10px; margin: 4px 0; border: 2px solid #ccc; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s; }
         #btn-v { background: #fff0f0; color: #cc0000; }
         #btn-e { background: #f0f8ff; color: #0066cc; }
         #btn-f { background: #f0fff0; color: #008800; }
-        #btn-r { background: #fff5e6; color: #cc6600; margin-top: 10px; } /* 新機能ボタン */
+        #btn-r { background: #fff5e6; color: #cc6600; margin-top: 10px; }
         
         .active { border-color: #333 !important; transform: scale(1.03); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .disabled { opacity: 0.3; pointer-events: none; filter: grayscale(100%); background: #ddd !important; border-color: #ccc !important; }
@@ -27,12 +32,11 @@
         .net-btn { width: 100%; padding: 12px; margin-top: 5px; background: #ff9800; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         .net-btn:hover { background: #e68900; }
 
-        /* 関係性情報パネル */
-        #relationInfo { display: none; margin-top: 10px; padding: 10px; background: #fff; border: 2px solid #cc6600; border-radius: 5px; font-size: 14px; }
-        .legend-item { display: flex; align-items: center; margin-bottom: 6px; }
-        .legend-color { width: 16px; height: 16px; margin-right: 8px; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .number-label { position: absolute; font-size: 24px; font-weight: bold; pointer-events: none; text-shadow: 2px 2px 0 white, -2px -2px 0 white, 2px -2px 0 white, -2px 2px 0 white; transform: translate(-50%, -50%); z-index: 10; }
 
-        .number-label { position: absolute; font-size: 24px; font-weight: bold; pointer-events: none; text-shadow: 2px 2px 0 white, -2px -2px 0 white, 2px -2px 0 white, -2px 2px 0 white; transform: translate(-50%, -50%); }
+        /* クイズ用パネル */
+        #quizPanel { display: none; margin-top: 10px; padding: 10px; background: #f0fff4; border: 2px solid #28a745; border-radius: 8px; }
+        #quizMsg { margin-top: 8px; font-weight: bold; color: #155724; min-height: 1.2em; font-size: 14px; }
 
         /* 展開図モーダル */
         #netOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 200; align-items: center; justify-content: center; backdrop-filter: blur(3px); }
@@ -44,14 +48,19 @@
 <body>
 
 <div id="ui">
+    <div class="main-mode-toggle">
+        <button id="main-study" class="main-btn active" onclick="setMainMode('study')">学習</button>
+        <button id="main-quiz" class="main-btn" onclick="setMainMode('quiz')">クイズ</button>
+    </div>
+
     <select id="shapeSelect">
         <optgroup label="角錐・角柱">
-            <option value="cube">立方体</option>
-            <option value="rectPrism">直方体</option>
-            <option value="triPrism">三角柱</option>
-            <option value="quadPrism">四角柱</option>
             <option value="triPyramid">三角錐</option>
             <option value="quadPyramid">四角錐</option>
+            <option value="rectPrism">直方体</option>
+            <option value="cube">立方体</option>
+            <option value="triPrism">三角柱</option>
+            <option value="quadPrism">四角柱</option>
         </optgroup>
         <optgroup label="円錐・円柱">
             <option value="cone">円錐</option>
@@ -59,26 +68,22 @@
         </optgroup>
     </select>
 
-    <button id="btn-v" class="mode-btn active" onclick="setMode('v')">● 頂点</button>
-    <button id="btn-e" class="mode-btn" onclick="setMode('e')">― 辺</button>
-    <button id="btn-f" class="mode-btn" onclick="setMode('f')">■ 面</button>
-    
-    <button id="btn-r" class="mode-btn" onclick="setMode('r')">🔍 垂直・平行 (辺)</button>
+    <div id="studyControls">
+        <button id="btn-v" class="mode-btn active" onclick="setMode('v')">● 頂点</button>
+        <button id="btn-e" class="mode-btn" onclick="setMode('e')">― 辺</button>
+        <button id="btn-f" class="mode-btn" onclick="setMode('f')">■ 面</button>
+        <button id="btn-r" class="mode-btn" onclick="setMode('r')">🔍 垂直・平行 (辺)</button>
+    </div>
 
-    <div id="relationInfo">
-        <div style="font-weight:bold; margin-bottom:8px; border-bottom:1px solid #ccc; padding-bottom:4px;">
-            基準の辺をクリック！
-        </div>
-        <div class="legend-item"><div class="legend-color" style="background:#000;"></div>基準の辺</div>
-        <div class="legend-item"><div class="legend-color" style="background:#3399ff;"></div>平行 (<span id="count-p">0</span>)</div>
-        <div class="legend-item"><div class="legend-color" style="background:#ff3333;"></div>垂直 (<span id="count-v">0</span>)</div>
-        <div class="legend-item"><div class="legend-color" style="background:#ffaa00;"></div>ねじれの位置 (<span id="count-s">0</span>)</div>
+    <div id="quizPanel">
+        <div id="quizQuestion" style="font-size:15px; font-weight:bold; color:#2c3e50;"></div>
+        <div id="quizMsg"></div>
     </div>
 
     <div class="control-group">
         <button id="styleBtn" class="toggle-btn" onclick="toggleStyle()">表示: 実体 (白)</button>
         <button class="reset-btn" onclick="resetCount()">全部リセット</button>
-        <button class="net-btn" onclick="showNet()">📐 展開図を見る</button>
+        <button class="net-btn" id="netBtn" onclick="showNet()">📐 展開図を見る</button>
     </div>
 </div>
 
@@ -97,9 +102,10 @@
 <script>
     var scene, camera, renderer, labelRenderer, controls, raycaster;
     var currentGroup, interactiveObjects = { v: [], e: [], f: [] };
-    var mode = 'v';
+    var mode = 'v', mainMode = 'study';
     var counters = { v: 0, e: 0, f: 0 };
     var isTransparent = false; 
+    var quizRefEdge = null, quizRelationType = '', quizRemainingCount = 0;
 
     const faceColors = [
         0xff5555, 0x55ff55, 0x5555ff, 0xffff55, 
@@ -150,24 +156,30 @@
         window.addEventListener('pointerdown', onPointerDown);
         window.addEventListener('resize', onWindowResize);
         
-        // 初期表示を立方体に変更
-        updateShape('cube');
+        updateShape('triPyramid');
+    }
+
+    function setMainMode(m) {
+        if (mainMode === m) return;
+        mainMode = m;
+        document.getElementById('main-study').classList.toggle('active', m === 'study');
+        document.getElementById('main-quiz').classList.toggle('active', m === 'quiz');
+        
+        document.getElementById('studyControls').style.display = (m === 'study') ? 'block' : 'none';
+        document.getElementById('quizPanel').style.display = (m === 'quiz') ? 'block' : 'none';
+        document.getElementById('netBtn').style.display = (m === 'study') ? 'block' : 'none';
+
+        resetCount();
     }
 
     function setMode(m) {
+        if (mode === m) return;
         mode = m;
         var btns = document.getElementsByClassName('mode-btn');
         for(var i=0; i<btns.length; i++) btns[i].classList.remove('active');
         document.getElementById('btn-' + m).classList.add('active');
-
-        var relInfo = document.getElementById('relationInfo');
-        if (m === 'r') {
-            relInfo.style.display = 'block';
-            updateShape(document.getElementById('shapeSelect').value); // 強制リセット
-        } else {
-            relInfo.style.display = 'none';
-            updateShape(document.getElementById('shapeSelect').value); // 強制リセット
-        }
+        
+        resetCount(); // 透明度リセット用
     }
 
     function toggleStyle() {
@@ -188,21 +200,28 @@
         var btnE = document.getElementById('btn-e');
         var btnF = document.getElementById('btn-f');
         var btnR = document.getElementById('btn-r');
-        
         btnV.classList.remove('disabled');
         btnE.classList.remove('disabled');
         btnF.classList.remove('disabled');
         btnR.classList.remove('disabled');
 
+        var needsModeChange = false;
+        var newMode = mode;
         if (type === 'cylinder') {
             btnV.classList.add('disabled');
             btnE.classList.add('disabled');
             btnR.classList.add('disabled');
-            if(mode === 'v' || mode === 'e' || mode === 'r') setMode('f');
+            if(mode === 'v' || mode === 'e' || mode === 'r') { needsModeChange = true; newMode = 'f'; }
         } else if (type === 'cone') {
             btnE.classList.add('disabled');
             btnR.classList.add('disabled');
-            if(mode === 'e' || mode === 'r') setMode('v');
+            if(mode === 'e' || mode === 'r') { needsModeChange = true; newMode = 'v'; }
+        }
+        if (needsModeChange) {
+            mode = newMode;
+            var btns = document.getElementsByClassName('mode-btn');
+            for(var i=0; i<btns.length; i++) btns[i].classList.remove('active');
+            document.getElementById('btn-' + newMode).classList.add('active');
         }
 
         var oldLabels = document.getElementsByClassName('number-label');
@@ -236,18 +255,15 @@
         if(!isSmooth) geom = geom.toNonIndexed(); 
 
         var baseMaterial;
-        if (isTransparent || mode === 'r') {
-            // 関係性モードの時は強制的に本体を透明にして見やすくする
-            var op = (mode === 'r') ? 0.05 : 0.0;
-            baseMaterial = new THREE.MeshBasicMaterial({ 
-                color: 0xffffff, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false 
-            });
+        var forceTransparent = (mainMode === 'quiz' || mode === 'r');
+        if (isTransparent) {
+            baseMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false });
+        } else if (forceTransparent) {
+            baseMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
         } else {
-            baseMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xffffff, transparent: false, opacity: 1.0, side: THREE.FrontSide,
-                specular: 0x111111, shininess: 10, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
-            });
+            baseMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: false, opacity: 1.0, side: THREE.FrontSide, specular: 0x111111, shininess: 10, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
         }
+        
         var baseMesh = new THREE.Mesh(geom, baseMaterial);
         baseMesh.userData = { clickedFacesNormals: [], shapeType: type };
         currentGroup.add(baseMesh);
@@ -271,24 +287,18 @@
         } else {
             var wireframe = new THREE.LineSegments(new THREE.EdgesGeometry(geom), wireMat);
             currentGroup.add(wireframe);
-            currentGroup.userData.wireframe = wireframe;
             
             var edgePoints = new THREE.EdgesGeometry(geom).attributes.position;
             for(var i=0; i<edgePoints.count; i+=2) {
                 var start = new THREE.Vector3(edgePoints.getX(i), edgePoints.getY(i), edgePoints.getZ(i));
                 var end = new THREE.Vector3(edgePoints.getX(i+1), edgePoints.getY(i+1), edgePoints.getZ(i+1));
                 var mid = start.clone().lerp(end, 0.5);
-                
-                // 少し太めにしてクリックしやすくする
-                var barMat = new THREE.MeshBasicMaterial({ color: 0x0066cc, transparent: true, opacity: 0.0 });
-                var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, start.distanceTo(end)), barMat);
-                bar.position.copy(mid); 
-                bar.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), end.clone().sub(start).normalize());
-                
-                // 計算用にstartとendを保存しておく
-                bar.userData = { type: 'e', clicked: false, start: start.clone(), end: end.clone() };
-                currentGroup.add(bar); 
-                interactiveObjects.e.push(bar);
+                // スマホでタップしやすいよう当たり判定を0.12に設定
+                var bar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, start.distanceTo(end)), new THREE.MeshBasicMaterial({ color: 0x0066cc, transparent: true, opacity: 0.0 }));
+                bar.position.copy(mid); bar.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), end.clone().sub(start).normalize());
+                // クイズ機能に必要な start, end を追加
+                bar.userData = { type: 'e', clicked: false, start: start, end: end }; 
+                currentGroup.add(bar); interactiveObjects.e.push(bar);
             }
         }
 
@@ -313,130 +323,38 @@
                 for(var j=0; j<vSet.length; j++) { if(vSet[j].distanceTo(v) < 0.1) exists = true; }
                 if(!exists) {
                     vSet.push(v);
-                    var dotColor = isTransparent || mode === 'r' ? 0xbbbbbb : 0xcccccc;
+                    var dotColor = isTransparent ? 0xbbbbbb : 0xcccccc;
                     var dot = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({color: dotColor}));
                     dot.position.copy(v); dot.userData = { type: 'v', clicked: false };
                     currentGroup.add(dot); interactiveObjects.v.push(dot);
                 }
             }
         }
-
-        // --- 関係性学習モード用の初期化 ---
-        if (mode === 'r' && currentGroup.userData.wireframe) {
-            currentGroup.userData.wireframe.visible = false; // 黒い枠線を消す
-            interactiveObjects.e.forEach(function(e) {
-                e.material.opacity = 0.4;
-                e.material.color.set(0xaaaaaa);
-            });
-            document.getElementById('count-p').textContent = 0;
-            document.getElementById('count-v').textContent = 0;
-            document.getElementById('count-s').textContent = 0;
-        }
-
         scene.add(currentGroup);
-    }
-
-    // 関係性を判定して色を塗る関数
-    function analyzeRelations(refEdge) {
-        var counts = { p: 0, v: 0, s: 0 };
-        var eps = 0.05; // 誤差許容範囲
-
-        // 基準となる辺のベクトルと頂点
-        var rP1 = refEdge.userData.start;
-        var rP2 = refEdge.userData.end;
-        var rV = new THREE.Vector3().subVectors(rP2, rP1).normalize();
-
-        // いったんすべての辺をリセット
-        interactiveObjects.e.forEach(function(edge) {
-            edge.material.opacity = 0.2;
-            edge.material.color.set(0xcccccc);
-            edge.scale.set(1, 1, 1);
-        });
-
-        interactiveObjects.e.forEach(function(edge) {
-            if (edge === refEdge) {
-                // 基準の辺
-                edge.material.opacity = 1.0;
-                edge.material.color.set(0x000000);
-                edge.scale.set(1.5, 1, 1.5);
-                return;
-            }
-
-            var tP1 = edge.userData.start;
-            var tP2 = edge.userData.end;
-            var tV = new THREE.Vector3().subVectors(tP2, tP1).normalize();
-
-            // 頂点を共有しているか（交わっているか）
-            var sharesVertex = false;
-            if (rP1.distanceTo(tP1) < eps || rP1.distanceTo(tP2) < eps ||
-                rP2.distanceTo(tP1) < eps || rP2.distanceTo(tP2) < eps) {
-                sharesVertex = true;
-            }
-
-            var dot = Math.abs(rV.dot(tV));
-            var isParallel = dot > 1 - eps;
-            var isPerp = dot < eps;
-
-            // 同一平面上にあるかの判定 (外積とベクトルの内積)
-            var cross = new THREE.Vector3().crossVectors(rV, tV);
-            var pDiff = new THREE.Vector3().subVectors(tP1, rP1);
-            var isCoplanar = Math.abs(cross.dot(pDiff)) < eps || isParallel;
-
-            if (sharesVertex) {
-                if (isPerp) {
-                    edge.material.color.set(0xff3333); // 垂直（赤）
-                    edge.material.opacity = 1.0;
-                    edge.scale.set(1.2, 1, 1.2);
-                    counts.v++;
-                } else {
-                    // 交わるが垂直ではない（グレー）
-                    edge.material.color.set(0x999999);
-                    edge.material.opacity = 0.6;
-                }
-            } else {
-                if (isParallel) {
-                    edge.material.color.set(0x3399ff); // 平行（青）
-                    edge.material.opacity = 1.0;
-                    edge.scale.set(1.2, 1, 1.2);
-                    counts.p++;
-                } else if (!isCoplanar) {
-                    edge.material.color.set(0xffaa00); // ねじれの位置（オレンジ）
-                    edge.material.opacity = 1.0;
-                    edge.scale.set(1.2, 1, 1.2);
-                    counts.s++;
-                } else {
-                    // 同一平面上にあるが平行でない（延長すれば交わる）
-                    edge.material.color.set(0x999999);
-                    edge.material.opacity = 0.6;
-                }
-            }
-        });
-
-        // 画面の数字を更新
-        document.getElementById('count-p').textContent = counts.p;
-        document.getElementById('count-v').textContent = counts.v;
-        document.getElementById('count-s').textContent = counts.s;
     }
 
     function onPointerDown(e) {
         if (e.target.tagName !== 'CANVAS') return;
         var mouse = new THREE.Vector2((e.clientX/window.innerWidth)*2-1, -(e.clientY/window.innerHeight)*2+1);
         raycaster.setFromCamera(mouse, camera);
-        
-        var btnId = 'btn-' + mode;
-        if(document.getElementById(btnId).classList.contains('disabled')) return;
 
-        // --- 関係性モード用の処理 ---
-        if (mode === 'r') {
-            var targetsR = interactiveObjects.e;
-            var intersectsR = raycaster.intersectObjects(targetsR);
-            if (intersectsR.length > 0) {
-                analyzeRelations(intersectsR[0].object);
-            }
+        // クイズモード
+        if (mainMode === 'quiz') {
+            var hits = raycaster.intersectObjects(interactiveObjects.e);
+            if (hits.length > 0) handleQuizClick(hits[0].object);
             return;
         }
 
-        // --- 通常の頂点・辺・面モード用の処理 ---
+        // 垂直・平行モード
+        if (mode === 'r') {
+            var hits = raycaster.intersectObjects(interactiveObjects.e);
+            if (hits.length > 0) analyzeRelations(hits[0].object);
+            return;
+        }
+        
+        var btnId = 'btn-' + mode;
+        if(document.getElementById(btnId) && document.getElementById(btnId).classList.contains('disabled')) return;
+
         var targets = (mode === 'v') ? interactiveObjects.v : (mode === 'e' ? interactiveObjects.e : interactiveObjects.f);
         var intersects = raycaster.intersectObjects(targets);
 
@@ -452,8 +370,10 @@
                 var isSideFace = isSmooth && (Math.abs(clickedNormal.y) < 0.9);
                 
                 var alreadyClicked;
+                // 修正ポイント： distanceTo を < 0.01 から < 0.1 に緩和し、同じ面の微小な位置ズレを許容
                 if(isSideFace) alreadyClicked = mesh.userData.clickedFacesNormals.includes("side");
-                else alreadyClicked = mesh.userData.clickedFacesNormals.some(function(n) { return (typeof n !== 'string') && n.distanceTo(clickedNormal) < 0.01; });
+                else alreadyClicked = mesh.userData.clickedFacesNormals.some(function(n) { return (typeof n !== 'string') && n.distanceTo(clickedNormal) < 0.1; });
+                
                 if (alreadyClicked) return;
 
                 if(isSideFace) mesh.userData.clickedFacesNormals.push("side");
@@ -517,6 +437,8 @@
                 if (mode === 'v') hit.object.material.color.set(0xff4444);
                 if (mode === 'e') { hit.object.material.opacity = 1.0; hit.object.material.color.set(0x4444ff); }
             }
+            
+            // ラベル表示（いただいたコードそのまま）
             var div = document.createElement('div');
             div.className = 'number-label';
             div.textContent = counters[mode];
@@ -534,7 +456,84 @@
         }
     }
     
-    function resetCount() { updateShape(document.getElementById('shapeSelect').value); }
+    // --- クイズと関係性のロジック ---
+ function handleQuizClick(hit) {
+     // 【追加】すでに全部見つけてクリアしている場合は、クリックしても反応しないようにする
+ if (quizRemainingCount <= 0) return;
+
+ if (hit === quizRefEdge || hit.userData.clicked) return;
+
+ if (hit.userData.isAnswer) {
+ hit.userData.clicked = true;
+hit.material.color.set(0x28a745);
+hit.material.opacity = 1;
+ quizRemainingCount--;
+  
+if (quizRemainingCount > 0) {
+ document.getElementById('quizMsg').textContent = "正解！まだありますよ。";
+ document.getElementById('quizMsg').style.color = "#28a745";
+ } else {
+// 【変更】自動で次へ進む setTimeout を削除し、メッセージを変更
+ document.getElementById('quizMsg').innerHTML = "よく見つけましたね！🎉<br>「全部リセット」で次の問題へ";
+ document.getElementById('quizMsg').style.color = "#007bff";
+ // setTimeout(startRelationQuiz, 2000); ←この行を削除しました
+ }
+ } else {
+ document.getElementById('quizMsg').textContent = "それは関係が違いますね。";
+ document.getElementById('quizMsg').style.color = "#dc3545";
+}
+ }
+
+
+    function startRelationQuiz() {
+        var type = document.getElementById('shapeSelect').value;
+        if (type === 'cone' || type === 'cylinder') {
+            document.getElementById('quizQuestion').textContent = "この図形には辺がありません。";
+            document.getElementById('quizMsg').textContent = "";
+            return;
+        }
+        if (!interactiveObjects.e || interactiveObjects.e.length === 0) return;
+        quizRefEdge = interactiveObjects.e[Math.floor(Math.random() * interactiveObjects.e.length)];
+        quizRefEdge.material.color.set(0x000000);
+        quizRefEdge.material.opacity = 1;
+        const types = ['垂直', '平行', 'ねじれの位置'];
+        quizRelationType = types[Math.floor(Math.random() * types.length)];
+        quizRemainingCount = 0;
+        const rV = new THREE.Vector3().subVectors(quizRefEdge.userData.end, quizRefEdge.userData.start).normalize();
+        interactiveObjects.e.forEach(edge => {
+            if (edge === quizRefEdge) return;
+            const tV = new THREE.Vector3().subVectors(edge.userData.end, edge.userData.start).normalize();
+            const dot = Math.abs(rV.dot(tV));
+            const shares = (quizRefEdge.userData.start.distanceTo(edge.userData.start) < 0.1 || quizRefEdge.userData.start.distanceTo(edge.userData.end) < 0.1 || quizRefEdge.userData.end.distanceTo(edge.userData.start) < 0.1 || quizRefEdge.userData.end.distanceTo(edge.userData.end) < 0.1);
+            let isMatch = (quizRelationType === '平行' && dot > 0.95) || (quizRelationType === '垂直' && dot < 0.05 && shares) || (quizRelationType === 'ねじれの位置' && !shares && dot < 0.95);
+            edge.userData.isAnswer = isMatch;
+            edge.userData.clicked = false;
+            if (isMatch) quizRemainingCount++;
+        });
+        document.getElementById('quizQuestion').innerHTML = `黒い辺に対して<br><b style="color:#d35400;">【${quizRelationType}】</b>な辺を選ぼう！`;
+        document.getElementById('quizMsg').textContent = "";
+    }
+
+    function analyzeRelations(ref) {
+        const rV = new THREE.Vector3().subVectors(ref.userData.end, ref.userData.start).normalize();
+        interactiveObjects.e.forEach(edge => {
+            edge.material.opacity = 0.3; edge.material.color.set(0xcccccc);
+            if (edge === ref) { edge.material.opacity = 1; edge.material.color.set(0x000000); return; }
+            const tV = new THREE.Vector3().subVectors(edge.userData.end, edge.userData.start).normalize();
+            const dot = Math.abs(rV.dot(tV));
+            const shares = (ref.userData.start.distanceTo(edge.userData.start) < 0.1 || ref.userData.start.distanceTo(edge.userData.end) < 0.1 || ref.userData.end.distanceTo(edge.userData.start) < 0.1 || ref.userData.end.distanceTo(edge.userData.end) < 0.1);
+            if (dot > 0.95) edge.material.color.set(0x3399ff);
+            else if (dot < 0.05 && shares) edge.material.color.set(0xff3333);
+            else if (!shares && dot < 0.95) edge.material.color.set(0xffaa00);
+            edge.material.opacity = 1;
+        });
+    }
+
+    function resetCount() { 
+        updateShape(document.getElementById('shapeSelect').value); 
+        if (mainMode === 'quiz') startRelationQuiz();
+    }
+    
     function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); labelRenderer.setSize(window.innerWidth, window.innerHeight); }
     function animate() { requestAnimationFrame(animate); if(controls) controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); }
 
@@ -593,6 +592,7 @@
             s += `<path d="M150,150 L250,150 A100,100 0 0,0 63,100 Z" ${style} />`; 
             s += `<circle cx="150" cy="235" r="35" ${style} />`;
         }
+
         s += '</svg>';
         return s;
     }
